@@ -12,10 +12,8 @@ theme_set(theme_classic()+
               legend.title = element_text(size = 12),                 # Legend title size
               legend.text = element_text(size = 10)                   # Legend text size
             ))
-#theme_set(theme_classic())
 
-setwd("/Users/pooirodriguez/Library/CloudStorage/OneDrive-VirginiaTech/Research/data")
-#setwd("C:/Users/lrs/OneDrive - Virginia Tech/Research")
+setwd("/Users/pooirodriguez/Manuscript_Codes/RScripts and files")
 
 ###Load and clean field data ####
 fieldD <- read_xlsx("Sampling.xlsx", sheet = "comparison")
@@ -85,7 +83,6 @@ fieldD$Lon <- as.numeric(fieldD$Lon)
 
 #####Clean and organize sat data ####
 #load
-setwd("/Users/pooirodriguez/Downloads")
 
 NDTIwo <- read_xlsx("NDTI_4manuscript.xlsx")
 #rename and clean columns

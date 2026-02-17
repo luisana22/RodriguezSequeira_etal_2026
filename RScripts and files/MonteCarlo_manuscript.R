@@ -3,6 +3,8 @@
 library(tidyverse)
 library(knitr)
 
+setwd("/Users/pooirodriguez/Manuscript_Codes/RScripts and files")
+
 trials <- 1000000
 norm.sims <- rnorm(trials, mean = 1, sd = 10)
 sum(norm.sims >= 3 & norm.sims <= 6)/trials

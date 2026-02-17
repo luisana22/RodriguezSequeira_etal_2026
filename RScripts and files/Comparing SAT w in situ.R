@@ -28,8 +28,7 @@ theme_set(theme_classic()+
               legend.title = element_text(size = 14),                 # Legend title size
               legend.text = element_text(size = 14)                   # Legend text size
             ))
-setwd("/Users/pooirodriguez/Library/CloudStorage/OneDrive-VirginiaTech/Research/Data")
-#setwd("C:/Users/lrs/OneDrive - Virginia Tech/Research/Data")
+setwd("/Users/pooirodriguez/Manuscript_Codes/RScripts and files")
 
 MPproxyGEE <- read_xlsx("MP proxy.xlsx")
 

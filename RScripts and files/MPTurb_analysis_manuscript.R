@@ -28,9 +28,8 @@ theme_set(theme_classic()+
               legend.title = element_text(size = 14),                 # Legend title size
               legend.text = element_text(size = 14)                   # Legend text size
             ))
-setwd("/Users/pooirodriguez/Library/CloudStorage/OneDrive-VirginiaTech/Research/Data")
-#setwd("C:/Users/lrs/OneDrive - Virginia Tech/Research/Data")
 
+setwd("/Users/pooirodriguez/Manuscript_Codes/RScripts and files")
 
 #######################
 #######Load Data#######
@@ -132,7 +131,7 @@ fieldD$Lon <- as.numeric(fieldD$Lon)
 
 ###Load and clean mp data ####
 #load the final count columns from the raw MP data and make the first row the column names
-mpD <- read_xlsx("mp comp-Pooi’s MacBook Air.xlsx", sheet = "comp") |> dplyr::select('...23':'...27')  |>  drop_na('...27')
+mpD <- read_xlsx("MPdata.xlsx", sheet = "comp") |> dplyr::select('...23':'...27')  |>  drop_na('...27')
 names(mpD) <- mpD[1,] # may come up with error regarding tibble but its okay to ignore
 mpD <- mpD[-1,]
 
