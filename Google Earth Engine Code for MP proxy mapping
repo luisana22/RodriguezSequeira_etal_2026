@@ -1,17 +1,13 @@
 var S2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED"),
-    Points = ee.FeatureCollection("projects/ee-lrs/assets/LRS_locations"),
-    blacksburg = /* color: #d63000 */ee.Geometry.Point([-80.56464169311523, 37.198021365160315]);
+    blacksburg = /* color: #d63000 */ee.Geometry.Point([-80.5645482338429, 37.19806003727215]),
+    Points = ee.FeatureCollection("projects/ee-lrs/assets/LRS_locations");
 
 //////////////////////////////////////////////////////
 // Parameters and AOI                               //
 //////////////////////////////////////////////////////
 
-var date_start = '2023-09-05';
-var date_end = '2024-09-29';
-
 var winter_start = '2023-12-01';
 var winter_end = '2024-03-01';
-
 
 var AOI = Points.geometry().bounds();
 
@@ -20,20 +16,20 @@ var AOI = Points.geometry().bounds();
 //////////////////////////////////////////////////////
 
 var S2_filtered = S2
-  .filterDate(date_start, date_end)
+  .filterDate(winter_start, winter_end)
   .filterBounds(AOI)
   .filterMetadata('CLOUDY_PIXEL_PERCENTAGE', 'less_than', 70);
 
 function cloudWaterMask(img) {
   var scl = img.select('SCL');
-  var mask = scl.eq(6).or(scl.eq(4)).or(scl.eq(5)).or(scl.eq(2));
+  var mask = scl.eq(6).or(scl.eq(4)).or(scl.eq(5)).or(scl.eq(2)); //pick pixel classes of interest  -- see S2 bottom of tab "bands" for SCL value meanings 
   return img.updateMask(mask);
 }
 
 var sentinel = S2_filtered.map(cloudWaterMask);
 
 //////////////////////////////////////////////////////
-// Indices: NDWI, NDTI, MP1, Turbidity, Water Mask //
+//     Indices: NDWI, NDTI, MP, Turbidity           //
 //////////////////////////////////////////////////////
 
 // Functions
@@ -43,26 +39,25 @@ function addIndices(img) {
   return img.addBands(ndwi).addBands(ndti);
 }
 
-//thesis version with 2/14: 10 ** (1.896 + 2.0897 * ndti)
-//without 2/14 and ouliers: 〖log〗_10 (MP/L) = 1.835 + 1.969 *NDTI                                           (eq.4)
 
-function addMP1(img) {
-  var mp1 = img.expression('10 ** (1.835 + 1.969 * ndti)', {
+function addMP(img) {
+  var mp = img.expression('10 ** (1.835 + 1.969 * ndti)', {
     ndti: img.select('NDTI')
-  }).rename('MP1');
-  return img.addBands(mp1);
+  }).rename('MP');
+  return img.addBands(mp);
 }
 
 function addTurbidity(img) {
-  var turb = img.expression('16.183 + 55.729 * ndti', {
+  var turb = img.expression('16.578 + 55.729 * ndti', {
     ndti: img.select('NDTI')
-  }).rename('Turbidity');
+  });
+  turb = turb.updateMask(turb.gte(0)).rename('Turbidity'); //turbidity cannot be below 0 so mask any negative results
   return img.addBands(turb);
 }
 
 function clipToWater(img) {
   var waterMask = img.select('NDWI').gt(0);
-  var mpWater = img.select('MP1').updateMask(waterMask).rename('MP_water1');
+  var mpWater = img.select('MP').updateMask(waterMask).rename('MP_water');
   var turbWater = img.select('Turbidity').updateMask(waterMask).rename('Turbidity_water');
   return img.addBands(mpWater).addBands(turbWater);
 }
@@ -70,19 +65,17 @@ function clipToWater(img) {
 // Apply all functions to Sentinel-2 collection
 var processed = sentinel
   .map(addIndices)
-  .map(addMP1)
+  .map(addMP)
   .map(addTurbidity)
   .map(clipToWater);
 
-//////////////////////////////////////////////////////
-// Seasonal Filter: Winter Only                     //
-//////////////////////////////////////////////////////
-
-var winterProcessed = processed.filterDate(winter_start, winter_end);
 
 //////////////////////////////////////////////////////
 // Visualization Parameters                         //
 //////////////////////////////////////////////////////
+
+// Display relevant geometries on the map.
+Map.setCenter(-80.5655, 37.198, 14);
 
 var MPviz = {
   min: 40,
@@ -103,29 +96,16 @@ var trueColorVis = {
   gamma: 1.2
 };
 
-//////////////////////////////////////////////////////
-// Map Initialization & First Image Layers          //
-//////////////////////////////////////////////////////
 
-Map.setCenter(-80.5655, 37.198, 17);
-var firstImg = winterProcessed.first();
-
-Map.addLayer(firstImg, trueColorVis, 'True Color - Mapping Day');
-Map.addLayer(firstImg.select('MP_water1'), MPviz, 'MP over Water (log10)');
-Map.addLayer(firstImg.select('Turbidity_water'), turbViz, 'Turbidity over Water');
-
-Map.addLayer(firstImg.select(['B4', 'B3', 'B2']), trueColorVis, 'True Color - Mapping Day');
-Map.addLayer(firstImg.select('MP_water1'), MPviz, 'MP Water - ');
-
-//////////////////////////////////////////////////////
-// UI Slider for MP over Water                      //
-//////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////
+// UI Slider for MP over Water with True color (RGB) as the background //
+/////////////////////////////////////////////////////////////////////////
 // =======================
 // UI Slider for MP + RGB
 // =======================
 
 // Get image list & dates
-var imageList = winterProcessed.toList(winterProcessed.size());
+var imageList = processed.toList(processed.size());
 var dates = imageList.map(function(img) {
   return ee.Date(ee.Image(img).get('system:time_start')).format('YYYY-MM-dd');
 }).getInfo();
@@ -133,41 +113,38 @@ var dates = imageList.map(function(img) {
 // Create a label to show the selected date
 var label = ui.Label('Date: ' + dates[0]);
 
-// Create the slider
+var currentTrueColor = null;
+var currentMP = null;
+
+function showDate(index) {
+  var img = ee.Image(imageList.get(index));
+  var date = dates[index];
+
+  var mpLayer = img.select('MP_water');
+  var trueColorLayer = img.select(['B4', 'B3', 'B2']);
+
+  if (currentTrueColor) Map.remove(currentTrueColor);
+  if (currentMP) Map.remove(currentMP);
+
+  currentTrueColor = ui.Map.Layer(trueColorLayer, trueColorVis, 'True Color - ' + date);
+  currentMP = ui.Map.Layer(mpLayer, MPviz, 'MP Water - ' + date);
+  Map.layers().add(currentTrueColor);
+  Map.layers().add(currentMP);
+
+  label.setValue('Date: ' + date);
+}
+
 var slider = ui.Slider({
   min: 0,
   max: dates.length - 1,
   step: 1,
   value: 0,
   style: {stretch: 'horizontal'},
-  onChange: function(index) {
-    var img = ee.Image(imageList.get(index));
-    var date = dates[index];
-
-    var mpLayer = img.select('MP_water1');
-    var trueColorLayer = img.select(['B4', 'B3', 'B2']);
-
-    // Remove previous MP and true color layers
-    Map.layers().forEach(function(layer) {
-      var name = layer.getName();
-      name = (name !== null && name !== undefined) ? String(name) : '';
-      if (name.indexOf('MP Water -') === 0 || name === 'True Color - Mapping Day') {
-        Map.remove(layer);
-      }
-    });
-
-    // Add new layers for current date
-    Map.addLayer(trueColorLayer, trueColorVis, 'True Color - Mapping Day');
-    Map.addLayer(mpLayer, MPviz, 'MP Water - ' + date);
-
-    label.setValue('Date: ' + date);
-  }
+  onChange: showDate
 });
 
-// Initialize with the first image's layers
-var firstImg = ee.Image(imageList.get(0));
-Map.addLayer(firstImg.select(['B4', 'B3', 'B2']), trueColorVis, 'True Color - Mapping Day');
-Map.addLayer(firstImg.select('MP_water1'), MPviz, 'MP Water - ' + dates[0]);
+// Show the first date using the same code path
+showDate(0);
 
 // UI panel
 var panel = ui.Panel({
@@ -184,149 +161,7 @@ var panel = ui.Panel({
 
 Map.add(panel);
 
-// // Get image list & dates
-// var imageList = winterProcessed.toList(winterProcessed.size());
-// var dates = imageList.map(function(img) {
-//   return ee.Date(ee.Image(img).get('system:time_start')).format('YYYY-MM-dd');
-// }).getInfo();
 
-// // Slider + label
-// var label = ui.Label('Date: ' + dates[0]);
-
-// var slider = ui.Slider({
-//   min: 0,
-//   max: dates.length - 1,
-//   step: 1,
-//   value: 0,
-//   style: {stretch: 'horizontal'},
-//   onChange: function(index) {
-//     var img = ee.Image(imageList.get(index));
-//     var date = dates[index];
-//     var mpLayer = img.select('MP_water1');
-
-//   Map.layers().forEach(function(layer) {
-//   var name = layer.getName();
-//   name = (name !== null && name !== undefined) ? String(name) : '';
-//   if (name.indexOf('MP Water -') === 0) {
-//     Map.remove(layer);
-//   }
-// });
-
-
-
-
-
-//     // Add new MP layer
-//     Map.addLayer(mpLayer, MPviz, 'MP Water - ' + date);
-//     label.setValue('Date: ' + date);
-//   }
-// });
-
-// // Initialize map with first MP layer
-// Map.addLayer(ee.Image(imageList.get(0)).select('MP_water1'), MPviz, 'MP Water - ' + dates[0]);
-
-// // UI panel
-// var panel = ui.Panel({
-//   widgets: [
-//     ui.Label('MP Over Water (Slider)', {fontWeight: 'bold', fontSize: '16px'}),
-//     label,
-//     slider
-//   ],
-//   style: {
-//     width: '300px',
-//     position: 'top-right'
-//   }
-// });
-
-// Map.add(panel);
-
-
-//////////////////////////////////////////////////////
-// Chart: MP Time Series (Winter)                   //
-//////////////////////////////////////////////////////
-
-var MPseries = winterProcessed.map(function(img) {
-  var meanMP = img.reduceRegion({
-    reducer: ee.Reducer.mean(),
-    geometry: blacksburg,
-    scale: 10,
-    maxPixels: 1e8
-  });
-  var date = img.get('system:time_start');
-  return ee.Feature(null, {
-    'date': ee.Date(date).format('YYYY-MM-dd'),
-    'MP1': meanMP.get('MP1')
-  });
-});
-
-var MPseries2 = winterProcessed.map(function(img) {
-  var meanMP = img.reduceRegion({
-    reducer: ee.Reducer.mean(),
-    geometry: blacksburg,
-    scale: 10,
-    maxPixels: 1e8
-  });
-  var date = img.get('system:time_start');
-  return ee.Feature(null, {
-    'date': ee.Date(date).format('YYYY-MM-dd'),
-    'MP2': meanMP.get('MP2')
-  });
-});
-
-var MPChart = ui.Chart.feature.byFeature(MPseries, 'date', 'MP1')
-  .setChartType('ScatterChart')
-  .setOptions({
-    title: 'MP Time Series (Winter)',
-    hAxis: {title: 'Date', format: 'MM/yyyy'},
-    vAxis: {title: 'MP (particles/Liter)'},
-    pointSize: 10,
-    lineWidth: 0,
-    color: 'purple'
-  });
-var MPChart2 = ui.Chart.feature.byFeature(MPseries2, 'date', 'MP2')
-  .setChartType('ScatterChart')
-  .setOptions({
-    title: 'MP Time Series (Winter)',
-    hAxis: {title: 'Date', format: 'MM/yyyy'},
-    vAxis: {title: 'MP (particles/Liter)'},
-    pointSize: 5,
-    lineWidth: 0,
-    color: 'purple'
-  });
-
-print(MPChart);
-print(MPseries);
-
-//////////////////////////////////////////////////////
-// Turbidity Chart: Winter Time Series              //
-//////////////////////////////////////////////////////
-
-var turbTimeSeries = winterProcessed.map(function(img) {
-  var meanTurb = img.reduceRegion({
-    reducer: ee.Reducer.mean(),
-    geometry: blacksburg,
-    scale: 10,
-    maxPixels: 1e8
-  });
-  var date = img.get('system:time_start');
-  return ee.Feature(null, {
-    'date': ee.Date(date).format('YYYY-MM-dd'),
-    'mean_turb': meanTurb.get('Turbidity')
-  });
-});
-
-var turbChart = ui.Chart.feature.byFeature(turbTimeSeries, 'date', 'mean_turb')
-  .setChartType('ScatterChart')
-  .setOptions({
-    title: 'Turbidity Time Series (Winter)',
-    hAxis: {title: 'Date', format: 'MM/yyyy'},
-    vAxis: {title: 'Turbidity (FNU)'},
-    pointSize: 5,
-    lineWidth: 0,
-    color: 'blue'
-  });
-
-print(turbChart);
 
 //////////////////////////////////////////////////////
 // Legend for MP                                    //
@@ -352,53 +187,147 @@ legend.add(ui.Thumbnail({
 legend.add(ui.Panel([ui.Label(MPviz.min)]));
 Map.add(legend);
 
+
+
+
+
 //////////////////////////////////////////////////////
-// Legend for Turbidity                             //
+// Chart: MP Time Series (Winter)                   //
 //////////////////////////////////////////////////////
 
-// var legend2 = ui.Panel({style: {position: 'bottom-left', padding: '8px 15px'}});
-// legend2.add(ui.Label({
-//   value: 'Turbidity (FNU)',
-//   style: {fontWeight: 'bold', fontSize: '18px'}
-// }));
-
-// var gradient2 = ee.Image.pixelLonLat().select('latitude')
-//   .multiply((turbViz.max - turbViz.min) / 100.0)
-//   .add(turbViz.min)
-//   .visualize(turbViz);
-
-// legend2.add(ui.Panel([ui.Label(turbViz.max)]));
-// legend2.add(ui.Thumbnail({
-//   image: gradient2,
-//   params: {bbox: '0,0,10,100', dimensions: '10x200'},
-//   style: {padding: '1px', position: 'bottom-center'}
-// }));
-// legend2.add(ui.Panel([ui.Label(turbViz.min)]));
-// Map.add(legend2);
-
-// //////////////////////////////////////////////////////
-// // Export Turbidity at Sampling Points              //
-// //////////////////////////////////////////////////////
-
-// var turbBands = winterProcessed.select('Turbidity').toBands();
-
-// var reducedTurb = turbBands.reduceRegions({
-//   collection: Points,
-//   reducer: ee.Reducer.mean(),
-//   scale: 10,
-// });
-
-// Export.table.toDrive({
-//   collection: reducedTurb,
-//   description: 'winter_kentland_Turbidity',
-//   fileFormat: 'CSV'
-// });
-
-
-Export.image.toDrive({
-  image: firstImg, // The image you want to export
-  description: 'myImageExport', // A descriptive name for the export task
-  scale: 10, // The resolution of the exported image (e.g., 30 meters per pixel)
-  region: blacksburg, // The geographic area to export
-  maxPixels: 1e11 // Maximum number of pixels to export (important for large exports)
+var NDTIseries = processed.map(function(img) {
+  var meanNDTI = img.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: blacksburg,
+    scale: 10,
+    maxPixels: 1e8
+  });
+  var date = img.get('system:time_start');
+  return ee.Feature(null, {
+    'date': ee.Date(date).format('YYYY-MM-dd'),
+    'NDTI': meanNDTI.get('NDTI')
+  });
 });
+
+
+var ndtiChart = ui.Chart.feature.byFeature(NDTIseries, 'date', 'NDTI')
+  .setChartType('ScatterChart')
+  .setOptions({
+    title: 'NDTI Time Series (Winter)',
+    hAxis: {title: 'Date', format: 'MM/yyyy'},
+    vAxis: {title: 'NDTI'},
+    pointSize: 10,
+    lineWidth: 0,
+    color: 'purple'
+  });
+
+
+print(ndtiChart);
+
+
+//////////////////////////////////////////////////////
+// Chart: MP Time Series (Winter)                   //
+//////////////////////////////////////////////////////
+
+var MPseries = processed.map(function(img) {
+  var meanMP = img.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: blacksburg,
+    scale: 10,
+    maxPixels: 1e8
+  });
+  var date = img.get('system:time_start');
+  return ee.Feature(null, {
+    'date': ee.Date(date).format('YYYY-MM-dd'),
+    'MP': meanMP.get('MP')
+  });
+});
+
+
+var MPChart = ui.Chart.feature.byFeature(MPseries, 'date', 'MP')
+  .setChartType('ScatterChart')
+  .setOptions({
+    title: 'MP Time Series (Winter)',
+    hAxis: {title: 'Date', format: 'MM/yyyy'},
+    vAxis: {title: 'MP (particles/Liter)'},
+    pointSize: 10,
+    lineWidth: 0,
+    color: 'purple'
+  });
+
+
+print(MPChart);
+
+Export.table.toDrive({
+  collection: ee.FeatureCollection(MPseries),
+  description: 'MP_timeseries_winter',
+  fileFormat: 'CSV',
+  selectors: ['date', 'MP']  // only export these columns
+});
+
+
+//////////////////////////////////////////////////////
+// Turbidity Chart: Winter Time Series              //
+//////////////////////////////////////////////////////
+
+var turbTimeSeries = processed.map(function(img) {
+  var meanTurb = img.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: blacksburg,
+    scale: 10,
+    maxPixels: 1e8
+  });
+  var date = img.get('system:time_start');
+  return ee.Feature(null, {
+    'date': ee.Date(date).format('YYYY-MM-dd'),
+    'mean_turb': meanTurb.get('Turbidity')
+  });
+});
+
+var turbChart = ui.Chart.feature.byFeature(turbTimeSeries, 'date', 'mean_turb')
+  .setChartType('ScatterChart')
+  .setOptions({
+    title: 'Turbidity Time Series (Winter)',
+    hAxis: {title: 'Date', format: 'MM/yyyy'},
+    vAxis: {title: 'Turbidity (FNU)'},
+    pointSize: 5,
+    lineWidth: 0,
+    color: 'blue'
+  });
+
+print("turb chart", turbChart);
+
+
+// //////////////////////////////////////////////////////
+// // Export Mp proxy values at Sampling Points        //
+// //////////////////////////////////////////////////////
+
+//we want to exporte these MP proxy values to later compare with in situ MP values in Rstudio
+
+
+var mpproxy = processed.select('MP')
+var bands = mpproxy.toBands()
+
+
+var reduced = bands.reduceRegions({ //selects values from pixels that are found within Points (in situ coordinates list)
+  collection: Points,
+  reducer: ee.Reducer.mean(),
+  scale: 10,
+});
+
+
+
+Export.table.toDrive({
+    collection: reduced, 
+    description: 'MPproxy', 
+    fileFormat: 'CSV'
+})
+
+//CAVEAT: 
+//the csv produced shows MP proxy values for every coordinate within Points during EACH day within Points, 
+//but remember that Points is a list of coordinates associated with specific days.
+//This means you must now clean the CSV to filter the coordinates during the days we are truly interested in.
+
+//////////////////////////////////////////////////////////
+//  Please see for the code on how to clean this CSV.   //
+//////////////////////////////////////////////////////////
