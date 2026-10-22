@@ -222,12 +222,16 @@ data$MPadj <- data$AVGTOTAL-16.9
 ######Kentland analysis####
 kentlandD <- data[c(which(data$site == "Kentland")),]
 
-ggplot(kentlandD, aes(Turbidity_SW, AVGTOTAL))+
+
+shapiro.test(kentlandD$AVGTOTAL)
+shapiro.test(kentlandD$Turbidity_SW)
+
+ggplot(kentlandD, aes(Turbidity_SW, AVGTOTAL, color = season))+
   geom_point()
-K <- boxplot(kentlandD$AVGTOTAL)$out
-x <-  kentlandD$Date[36]
-kentlandD <- kentlandD[-c(which(kentlandD$AVGTOTAL %in% K)),]
-kentlandD <- kentlandD[-c(which(kentlandD$Date == x)),]
+k1 <- boxplot(kentlandD$AVGTOTAL)$out
+k2 <- boxplot(kentlandD$Discharge)$out
+K <-  c(which(kentlandD$AVGTOTAL %in% k1), which(kentlandD$Discharge %in% k2))
+kentlandD <- kentlandD[-(K),]
 
 ggplot(kentlandD, aes((Turbidity_SW), (AVGTOTAL), color = season))+ 
   geom_point(size = 3.5)+
@@ -244,10 +248,10 @@ ggplot(kentlandD, aes((Turbidity_SW), (AVGTOTAL), color = season))+
   xlab("Turbidity (FNU)")+
   theme(legend.position="none")+
   scale_color_manual(values = c( "#FFB000", "#FE6100", "#DC267F", "#785EF0")) +
-  facet_wrap(~(season))#, scale = "free")
+  facet_wrap(~(season), scale = "free")
 
-#visualize mp and turb change through seasons
-ggplot(kentlandD, aes(season, MPadj, color = season))+
+#visualize mp change through seasons #note: can switch AVGTOTAL out for Turbidity_SW to see turbidity change through seasons
+ggplot(kentlandD, aes(season, AVGTOTAL, color = season))+
   geom_violin(linewidth = 1)+
   #geom_jitter(height = 0, width = 0.1) +
   #geom_dotplot(binaxis='y', stackdir='center', position = 'dodge', dotsize=1)+
@@ -257,37 +261,19 @@ ggplot(kentlandD, aes(season, MPadj, color = season))+
   ylab("MP count per liter")
 
 
-#get rid of mp counts that are under 0
-kentadj <- kentlandD[-c(which(kentlandD$MPadj <= 0)),] #0.102 #log10(mpadj) 0.104 #log10(turb) 0.1475 #log-log 0.1484
 
-ggplot(kentadj, aes(Turbidity_SW, MPadj))+
-  geom_point()+
-  facet_wrap(~(season), scales="free")
+winterKent <- kentlandD[which(kentlandD$season == "Winter"),] 
 
-springK <- kentadj[which(kentadj$season == "Spring"),] #0.1778 #log10(mpadj) 0.1691 #log10(turb) 0.2297 #log-log 0.1887
-summerK <- kentadj[which(kentadj$season == "Summer"),] #0.0110 #log10(mpadj) 0.0219 #log10(turb) 0.0525 #log-log 0.0741
-fallK <-   kentadj[which(kentadj$season == "Fall"),]   #0.1782 #log10(mpadj) 0.2927 #log10(turb) 0.2037 #log-log 0.3386
-winterK <- kentadj[which(kentadj$season == "Winter"),] #0.4798 #log10(mpadj) 0.5412 #log10(turb) 0.3204 #log-log 0.4526
-####best
-winterKent <- kentlandD[which(kentlandD$season == "Winter"),] #0.5548
-####
-fallKent <-   kentlandD[which(kentlandD$season == "Fall"),]   #0.1782
-summerKent <- kentlandD[which(kentlandD$season == "Summer"),] #0.01099
-springKent <- kentlandD[which(kentlandD$season == "Spring"),] #0.1801
-
-#with avgtotal: #0.5548 #log10(avgtotal) 0.6198 #log10(turb) 0.4235 #log-log 0.5696
-y <- log10(winterKt$AVGTOTAL)
-x <- (winterKt$Turbidity_SW)
+#with avgtotal: #0.71 #log10(avgtotal) 0.71 but higher sig code #log10(turb) 0.4456 #log-log 0.5833
+#log10(mp/l) = 1.248757 + 0.035326 * turb
+y <- log10(winterKent$AVGTOTAL)
+x <- (winterKent$Turbidity_SW)
 modelData <- data.frame(x,y)
-plot(modelData)
+#plot(modelData)
 model1 <- lm((y) ~ (x), data = modelData)
 summary(model1)
 
-#y = 1.27 + 0.04*log10(x)
-#y = 14.413 + 4.352*x
-#updated: without 2/14
-#log10(y) = 1.248757 + 0.035326 * x
-ggplot(winterKent, aes(Turbidity_SW, (AVGTOTAL)))+
+ggplot(winterKent, aes(Turbidity_SW, log10(AVGTOTAL)))+
   geom_point(size = 3.5)+
   geom_smooth(
     method = "lm",            # Linear model
@@ -297,13 +283,65 @@ ggplot(winterKent, aes(Turbidity_SW, (AVGTOTAL)))+
     linewidth = 1.5,                  # Line thickness
     linetype = "solid"           # Line type (solid, dashed, etc.)
   ) +
-  ylab("MP particles per liter")+
-  xlab("Turbidity (FNU)")
+  ylab("log10 (MP/L)")+
+  xlab("In situ turbidity (FNU)")
+
+ggplot(winterKent, aes(Turbidity_SW, AVGTOTAL))+
+  geom_point(size = 3.5)+
+  geom_function(
+    fun = function(x) 10^(1.248757 + 0.035326 * x),
+    color = "black",
+    linewidth = 1.5,
+    linetype = "solid"
+  )+
+  # geom_smooth(
+  #   method = "glm",
+  #   formula = y ~ x,
+  #   method.args = list(family = gaussian(link = "log")),  # exponential fit
+  #   se = TRUE,
+  #   color = "black",
+  #   linewidth = 1.5,
+  #   linetype = "solid"
+  # ) +
+  ylab("MP/L")+
+  xlab("In situ turbidity (FNU)")
+
+
+# first extract the CI from your model
+model <- lm(log10(AVGTOTAL) ~ Turbidity_SW, data = winterKent)
+conf <- predict(model, interval = "confidence", level = 0.95)
+
+# add fitted and CI columns to your data
+winterKent$fit <- 10^conf[, "fit"]
+winterKent$lwr <- 10^conf[, "lwr"]
+winterKent$upr <- 10^conf[, "upr"]
+
+# then plot
+ggplot(winterKent, aes(Turbidity_SW, AVGTOTAL))+
+  geom_point(size = 3.5)+
+  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, fill = "grey")+ # CI band
+  geom_function(
+    fun = function(x) 10^(1.248757 + 0.035326 * x),
+    color = "black",
+    linewidth = 1.5,
+    linetype = "solid"
+  )+
+  ylab("MP/L")+
+  xlab("In situ turbidity (FNU)")
+
+
+
+write_xlsx(winterKent, "/Users/pooirodriguez/Manuscript_Codes/RScripts and files/winterKent.xlsx")
+
+
 
 
 ########MP Proxy check#####
-x <- seq(-1, 0.3, length.out = 100)
-y <- 10^(1.273948 + 0.037497 * (16.183 +55.729 * x))
+x <- seq(-1, 0.3, length.out = 100) #rough ndti range
+#y <- 10^(1.273948 + 0.037497 * (16.183 +55.729 * x))
+#y <- 10^(1.248757 + 0.035326 * (16.183 +55.729 * x))
+y2 <- 77.866  + 226.598 *x #x is ndti
+y <- 10 ** (1.835 + 1.969 *x)
 modelData <- data.frame(x,y)
 
 ggplot(modelData, aes(x, (y)))+
@@ -346,7 +384,6 @@ c<- ggplot(Qdata, aes(Date, (FlowM)))+# color = month)) +
   ylab("Discharge (cms)")
 
 a/b/c
-
 
 
 

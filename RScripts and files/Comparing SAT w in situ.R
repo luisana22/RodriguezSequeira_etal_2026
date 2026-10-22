@@ -18,6 +18,7 @@ library(coin)
 library(FSA)
 library(ggstatsplot)
 library(exactRankTests)
+library(writexl)
 
 theme_set(theme_classic()+
             theme(
@@ -30,41 +31,96 @@ theme_set(theme_classic()+
             ))
 setwd("/Users/pooirodriguez/Manuscript_Codes/RScripts and files")
 
-MPproxyGEE <- read_xlsx("MP proxy.xlsx")
 
-names(MPproxyGEE) <- MPproxyGEE[1,]
-MPproxyGEE <- MPproxyGEE[-1,-c(1,4)]
-MPproxyGEE$date <- as.Date(MPproxyGEE$date)
-MPproxyGEE$MP1 <- as.numeric(MPproxyGEE$MP1)
+winterKent <- read_xlsx("winterKent.xlsx")
 
-ggplot(MPproxyGEE, aes(date, MP1))+
+# 
+# MPproxyGEE <- read_xlsx("MPproxy_new.xlsx")
+# 
+# 
+# #rename and clean columns
+# names(MPproxyGEE) <- MPproxyGEE[1,]
+# MPproxyGEE <- MPproxyGEE[-c(1),-c(1)]
+# l <- length(MPproxyGEE)
+# MPproxyGEE <- MPproxyGEE[,-c(l)]
+# names(MPproxyGEE)[(l-3):(l-1)] <- c("SampleID", "Coordinates", "Date")
+# 
+# satD <- pivot_longer(MPproxyGEE, cols = -c("SampleID", "Coordinates", "Date")) ## %>% drop_na()
+# colnames(satD) <- c("SampleID", "Coordinates", "Date", "SatDate", "MPproxy")
+# 
+# ##correct column type (dates to date and values to numbers)
+# satD$SatDate <- as.character(satD$SatDate) %>% as.Date(format = "%Y%m%d") %>% format("%m/%d/%y")
+# satD$Date <- as.Date(satD$Date, format = "%m/%d/%y")
+# satD$SatDate <- as.Date(satD$SatDate, format = "%m/%d/%y")
+# satD$MPproxy <- as.numeric(satD$MPproxy)
+# 
+# byD <- satD[which(satD$SatDate == satD$Date), ] %>% drop_na()
+# 
+# satINSITU <- full_join(byD, winterKent, by = c('SampleID' = 'Sample ID')) #%>% drop_na(SatDate)
+# 
+# 
+# ####regression analysis####
+# # turb = 16.578 + 55.729 *ndti 
+# x<- satINSITU$MPproxy
+# y<- (satINSITU$AVGTOTAL)
+# 
+# modelData <- data.frame(x,y)
+# #plot(modelData)
+# model1 <- lm(y ~ x, data = modelData)
+# summary(model1)
+# 
+# ggplot(satINSITU, aes(MPproxy, (AVGTOTAL)))+ 
+#   geom_point(size = 4)+
+#   #geom_line(aes(x, line), color = "red", linewidth = 3)+
+#   geom_smooth(
+#     method = "lm",            # Linear model
+#     formula = ((y)~x),
+#     se = TRUE,                   # Show confidence interval
+#     color = "black",          # Change line color
+#     linewidth = 1.5,                  # Line thickness
+#     linetype = "solid"           # Line type (solid, dashed, etc.)
+#   )+
+#   labs(color = "Season")+
+#   xlab("MP proxy")+
+#   ylab("In situ MP")
+#  
+# # n = 5; r2 = 0.559
+# # in sity mp = 177.2824 + -0.8373 * mpproxy
+# 
+# write_xlsx(satINSITU, "/Users/pooirodriguez/Manuscript_Codes/RScripts and files/satINSITU.xlsx")
+# 
+
+
+
+
+MpwinterproxyBB <- read_xlsx("MP_timeseries_winter.xlsx") #at blacksburg points
+
+names(MpwinterproxyBB) <- MpwinterproxyBB[1,]
+MpwinterproxyBB <- MpwinterproxyBB[-1,]
+MpwinterproxyBB$date <- as.Date(MpwinterproxyBB$date)
+MpwinterproxyBB$MP <- as.numeric(MpwinterproxyBB$MP)
+
+ggplot(MpwinterproxyBB, aes(date, MP))+
   geom_point()
 wK <- winterKent[,c(4, 6)]
-data <- full_join(MPproxyGEE, wK, by = c('date'= 'Date'))
+data <- full_join(MpwinterproxyBB, wK, by = c('date'= 'Date'))
 
 df_long <- data %>%
   pivot_longer(
-    cols = c(MP1, AVGTOTAL),     # the two columns you want to plot
+    cols = c(MP, AVGTOTAL),     # the two columns you want to plot
     names_to = "series",       # name for new “variable name” column
     values_to = "MP"        # name for new “value” column
   ) 
 
 df_long <- mutate(df_long, date = as.Date(date, format = "%Y-%m-%d"))
 
-df_long <- df_long %>% 
-  mutate(
-    highlight = if_else(
-      series == "MP1" & date %in% highlight_dates, 
-      "star", 
-      "normal"
-    )
-  )
 
-ggplot(df_long, aes(x = date, y = MP, color = series, shape = highlight)) +
-  geom_point(size = 4) +
+
+ggplot(df_long, aes(x = date, y = MP, color = series)) +#, shape = highlight)) +
+  geom_point(size = 3) +
   scale_color_manual(
     # manually set colors for each series
-    values = c("MP1" = "blue", "AVGTOTAL" = "lightgreen"),
+    values = c("MP" = "blue", "AVGTOTAL" = "lightgreen"),
     name   = "MP/L measurements",                          # legend title for colour
     labels = c("MP1" = "Satellite-derived", "AVGTOTAL" = "In situ")  # legend labels
   ) +
@@ -84,4 +140,5 @@ ggplot(df_long, aes(x = date, y = MP, color = series, shape = highlight)) +
     legend.title = element_text(size = 10),       # smaller legend title
     legend.key.size = unit(0.5, "cm")            # smaller legend symbols / key boxes
   ) 
+
 
