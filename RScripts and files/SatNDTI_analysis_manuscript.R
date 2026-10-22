@@ -84,7 +84,9 @@ fieldD$Lon <- as.numeric(fieldD$Lon)
 #####Clean and organize sat data ####
 #load
 
-NDTIwo <- read_xlsx("NDTI_4manuscript.xlsx")
+NDTIwinter <- read_xlsx("NDTIpointsWinter.xlsx") # 4 points r2 = .9883
+NDTIwo <- read_xlsx("NDTIpoints_general.xlsx") # 15 points r2 = 0.7113 y = 16.578 + 55.729*x
+
 #rename and clean columns
 names(NDTIwo) <- NDTIwo[1,]
 NDTIwo <- NDTIwo[-c(1),-c(1)]
@@ -92,41 +94,35 @@ l <- length(NDTIwo)
 NDTIwo <- NDTIwo[,-c(l)]
 names(NDTIwo)[(l-3):(l-1)] <- c("SampleID", "Coordinates", "Date")
 
-satD <- pivot_longer(NDTIwo, cols = -c("SampleID", "Coordinates", "Date")) ## %>% drop_na()
-colnames(satD) <- c("SampleID", "Coordinates", "Date", "SatDate", "NDTI")
+satD1 <- pivot_longer(NDTIwo, cols = -c("SampleID", "Coordinates", "Date")) ## %>% drop_na()
+colnames(satD1) <- c("SampleID", "Coordinates", "Date", "SatDate", "NDTI")
 
 ##correct column type (dates to date and values to numbers)
-satD$SatDate <- as.character(satD$SatDate) %>% as.Date(format = "%Y%m%d") %>% format("%m/%d/%y")
-satD$Date <- as.Date(satD$Date, format = "%m/%d/%y")
-satD$SatDate <- as.Date(satD$SatDate, format = "%m/%d/%y")
-satD$NDTI <- as.numeric(satD$NDTI)
+satD1$SatDate <- as.character(satD1$SatDate) %>% as.Date(format = "%Y%m%d") %>% format("%m/%d/%y")
+satD1$Date <- as.Date(satD1$Date, format = "%m/%d/%y")
+satD1$SatDate <- as.Date(satD1$SatDate, format = "%m/%d/%y")
+satD1$NDTI <- as.numeric(satD1$NDTI)
 
-byD <- satD[which(satD$SatDate == satD$Date), ] %>% drop_na()
+byD1 <- satD1[which(satD1$SatDate == satD1$Date), ] %>% drop_na()
 
-compareBD <- full_join(byD, fieldD, by = 'SampleID') %>% drop_na(SatDate)
+ndti_turb <- full_join(byD1, fieldD, by = 'SampleID') %>% drop_na(SatDate)
+
+shapiro.test(ndti_turb$Turbidity_SW)
+shapiro.test(ndti_turb$NDTI)
+
+
 
 ####regression analysis####
-x<- compareBD$NDTI
-y<- (compareBD$Turbidity_SW)
+# turb = 16.578 + 55.729 *ndti 
+x<- ndti_turb$NDTI
+y<- (ndti_turb$Turbidity_SW)
 
 modelData <- data.frame(x,y)
-plot(modelData)
+#plot(modelData)
 model1 <- lm(y ~ x, data = modelData)
 summary(model1)
 
-modelData <- data.frame(x,y)
-plot(modelData)
-c1 <- min(y) * 0.5
-model1 <- lm((y - c1) ~ x, data = modelData)
-summary(model1)
-startV <- list(a=exp(coef(model1)[1]), b=coef(model1)[2], c=c1)
-model <- nls(y ~ a * exp(b * x) + c, data = modelData, start = startV)
-summary(model)
-p <- coef(model)
-line <- p["a"] * exp(p["b"] * x) + p["c"]
-
-
-ggplot(compareBD, aes(NDTI, (Turbidity_SW)))+ 
+yearndtiturbplot <- ggplot(ndti_turb, aes(NDTI, (Turbidity_SW)))+ 
   geom_point(size = 4)+
   #geom_line(aes(x, line), color = "red", linewidth = 3)+
   geom_smooth(
@@ -139,9 +135,13 @@ ggplot(compareBD, aes(NDTI, (Turbidity_SW)))+
   )+
   labs(color = "Season")+
   xlab("NDTI")+
-  ylab("in insitu Turbidity (FNU)")
+  ylab("In situ turbidity (FNU)")+
+  xlim(-0.37, 0.04)+
+  coord_cartesian(ylim = c(0, 25), expand = FALSE)
 
+yearndtiturbplot
 
+write_xlsx(ndti_turb, "/Users/pooirodriguez/Manuscript_Codes/RScripts and files/ndti_turb.xlsx")
 
 
 
